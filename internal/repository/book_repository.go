@@ -72,6 +72,10 @@ func (r *BookRepository) FindByID(id string) (*models.BookWithCategory, error) {
 }
 
 func (r *BookRepository) FindAll() ([]*models.BookWithCategory, error) {
+    return r.FindAllPaginated(0, 0)
+}
+
+func (r *BookRepository) FindAllPaginated(limit, offset int) ([]*models.BookWithCategory, error) {
     query := `
         SELECT b.id, b.title, b.description, b.pdf_file, b.category_id, b.owner_id,
                b.like_count, b.dislike_count, b.save_count, b.created_at, b.updated_at,
@@ -80,8 +84,20 @@ func (r *BookRepository) FindAll() ([]*models.BookWithCategory, error) {
         JOIN categories c ON b.category_id = c.id
         ORDER BY b.save_count DESC
     `
-    
-    rows, err := r.db.Query(query)
+
+    // Add pagination if limit > 0
+    if limit > 0 {
+        query += ` LIMIT $1 OFFSET $2`
+    }
+
+    var rows *sql.Rows
+    var err error
+
+    if limit > 0 {
+        rows, err = r.db.Query(query, limit, offset)
+    } else {
+        rows, err = r.db.Query(query)
+    }
     if err != nil {
         return nil, err
     }
@@ -105,6 +121,10 @@ func (r *BookRepository) FindAll() ([]*models.BookWithCategory, error) {
 }
 
 func (r *BookRepository) FindByCategory(categoryID string) ([]*models.BookWithCategory, error) {
+    return r.FindByCategoryPaginated(categoryID, 0, 0)
+}
+
+func (r *BookRepository) FindByCategoryPaginated(categoryID string, limit, offset int) ([]*models.BookWithCategory, error) {
     query := `
         SELECT b.id, b.title, b.description, b.pdf_file, b.category_id, b.owner_id,
                b.like_count, b.dislike_count, b.save_count, b.created_at, b.updated_at,
@@ -114,8 +134,20 @@ func (r *BookRepository) FindByCategory(categoryID string) ([]*models.BookWithCa
         WHERE b.category_id = $1
         ORDER BY b.save_count DESC
     `
-    
-    rows, err := r.db.Query(query, categoryID)
+
+    // Add pagination if limit > 0
+    if limit > 0 {
+        query += ` LIMIT $2 OFFSET $3`
+    }
+
+    var rows *sql.Rows
+    var err error
+
+    if limit > 0 {
+        rows, err = r.db.Query(query, categoryID, limit, offset)
+    } else {
+        rows, err = r.db.Query(query, categoryID)
+    }
     if err != nil {
         return nil, err
     }
@@ -151,10 +183,24 @@ func (r *BookRepository) UpdateLikeCount(bookID string) error {
 
 func (r *BookRepository) UpdateSaveCount(bookID string) error {
     query := `
-        UPDATE books 
+        UPDATE books
         SET save_count = (SELECT COUNT(*) FROM saved_books WHERE book_id = $1)
         WHERE id = $1
     `
     _, err := r.db.Exec(query, bookID)
     return err
+}
+
+func (r *BookRepository) CountAll() (int, error) {
+    var count int
+    query := `SELECT COUNT(*) FROM books`
+    err := r.db.QueryRow(query).Scan(&count)
+    return count, err
+}
+
+func (r *BookRepository) CountByCategory(categoryID string) (int, error) {
+    var count int
+    query := `SELECT COUNT(*) FROM books WHERE category_id = $1`
+    err := r.db.QueryRow(query, categoryID).Scan(&count)
+    return count, err
 }

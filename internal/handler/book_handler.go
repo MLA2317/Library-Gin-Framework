@@ -5,8 +5,11 @@ import (
     "library-project/config"
     "library-project/internal/dto"
     "library-project/internal/service"
+    "library-project/internal/utils"
     "net/http"
+    "os"
     "path/filepath"
+    "strconv"
 
     "github.com/gin-gonic/gin"
     "github.com/google/uuid"
@@ -38,6 +41,7 @@ func NewBookHandler(bookService *service.BookService, cfg *config.Config) *BookH
 // @Success 201 {object} dto.BookResponse 
 // @Failure 400 {object} map[string]string
 // @Failure 401 {object} map[string]string
+// @Failure 403 {object} map[string]string
 // @Failure 500 {object} map[string]string
 // @Router /books [post]
 func (h *BookHandler) CreateBook(c *gin.Context) {
@@ -53,8 +57,9 @@ func (h *BookHandler) CreateBook(c *gin.Context) {
         return
     }
 
-    if file.Size > h.cfg.Upload.MaxFileSize {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "File size exceeds limit"})
+    // Validate PDF file (MIME type, size, extension)
+    if err := utils.ValidatePDFFile(file, h.cfg.Upload.MaxFileSize); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
         return
     }
 
@@ -78,21 +83,63 @@ func (h *BookHandler) CreateBook(c *gin.Context) {
 
 // GetAllBooks godoc
 // @Summary Get all books
-// @Description Get all books ordered by save count
+// @Description Get all books ordered by save count with pagination
 // @Tags books
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {array} dto.CategoryResponse
+// @Param page query int false "Page number (default: 1)"
+// @Param page_size query int false "Page size (default: 20, max: 100)"
+// @Success 200 {object} dto.BookListResponse
 // @Failure 500 {object} map[string]string
 // @Router /books [get]
 func (h *BookHandler) GetAllBooks(c *gin.Context) {
-    books, err := h.bookService.GetAllBooks()
+    // Parse pagination parameters
+    page := 1
+    pageSize := 20
+
+    if p := c.Query("page"); p != "" {
+        if parsedPage, err := strconv.Atoi(p); err == nil && parsedPage > 0 {
+            page = parsedPage
+        }
+    }
+
+    if ps := c.Query("page_size"); ps != "" {
+        if parsedSize, err := strconv.Atoi(ps); err == nil && parsedSize > 0 {
+            pageSize = parsedSize
+        }
+    }
+
+    // Get paginated books
+    books, total, err := h.bookService.GetAllBooksPaginated(page, pageSize)
     if err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
         return
     }
 
-    c.JSON(http.StatusOK, books)
+    // Build response
+    response := dto.BookListResponse{
+        Books:      make([]dto.BookResponse, len(books)),
+        Pagination: utils.BuildPaginationResponse(page, pageSize, total),
+    }
+
+    for i, book := range books {
+        response.Books[i] = dto.BookResponse{
+            ID:           book.ID,
+            Title:        book.Title,
+            Description:  book.Description,
+            PDFFile:      book.PDFFile,
+            CategoryID:   book.CategoryID,
+            CategoryName: book.CategoryName,
+            OwnerID:      book.OwnerID,
+            LikeCount:    book.LikeCount,
+            DislikeCount: book.DislikeCount,
+            SaveCount:    book.SaveCount,
+            CreatedAt:    book.CreatedAt,
+            UpdatedAt:    book.UpdatedAt,
+        }
+    }
+
+    c.JSON(http.StatusOK, response)
 }
 
 // GetBook godoc
@@ -179,12 +226,14 @@ func (h *BookHandler) DeleteBook(c *gin.Context) {
 
 // GetBooksByCategory godoc
 // @Summary Get books by category
-// @Description Get all books in a specific category ordered by save count
+// @Description Get all books in a specific category ordered by save count with pagination
 // @Tags books
 // @Produce json
 // @Security BearerAuth
 // @Param category_id query string true "Category ID"
-// @Success 200 {array} dto.BookResponse
+// @Param page query int false "Page number (default: 1)"
+// @Param page_size query int false "Page size (default: 20, max: 100)"
+// @Success 200 {object} dto.BookListResponse
 // @Failure 500 {object} map[string]string
 // @Router /books/category [get]
 func (h *BookHandler) GetBooksByCategory(c *gin.Context) {
@@ -194,13 +243,53 @@ func (h *BookHandler) GetBooksByCategory(c *gin.Context) {
         return
     }
 
-    books, err := h.bookService.GetBooksByCategory(categoryID)
+    // Parse pagination parameters
+    page := 1
+    pageSize := 20
+
+    if p := c.Query("page"); p != "" {
+        if parsedPage, err := strconv.Atoi(p); err == nil && parsedPage > 0 {
+            page = parsedPage
+        }
+    }
+
+    if ps := c.Query("page_size"); ps != "" {
+        if parsedSize, err := strconv.Atoi(ps); err == nil && parsedSize > 0 {
+            pageSize = parsedSize
+        }
+    }
+
+    // Get paginated books
+    books, total, err := h.bookService.GetBooksByCategoryPaginated(categoryID, page, pageSize)
     if err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
         return
     }
 
-    c.JSON(http.StatusOK, books)
+    // Build response
+    response := dto.BookListResponse{
+        Books:      make([]dto.BookResponse, len(books)),
+        Pagination: utils.BuildPaginationResponse(page, pageSize, total),
+    }
+
+    for i, book := range books {
+        response.Books[i] = dto.BookResponse{
+            ID:           book.ID,
+            Title:        book.Title,
+            Description:  book.Description,
+            PDFFile:      book.PDFFile,
+            CategoryID:   book.CategoryID,
+            CategoryName: book.CategoryName,
+            OwnerID:      book.OwnerID,
+            LikeCount:    book.LikeCount,
+            DislikeCount: book.DislikeCount,
+            SaveCount:    book.SaveCount,
+            CreatedAt:    book.CreatedAt,
+            UpdatedAt:    book.UpdatedAt,
+        }
+    }
+
+    c.JSON(http.StatusOK, response)
 }
 
 // SaveBook godoc
@@ -378,6 +467,33 @@ func (h *BookHandler) CreateCategory(c *gin.Context) {
     c.JSON(http.StatusCreated, category)
 }
 
+// DeleteCategory godoc
+// @Summary Delete a category (Owner only)
+// @Description Delete a category if it has no books (Owner only)
+// @Tags categories
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Category ID"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Router /categories/{id} [delete]
+func (h *BookHandler) DeleteCategory(c *gin.Context) {
+    categoryID := c.Param("id")
+
+    if err := h.bookService.DeleteCategory(categoryID); err != nil {
+        if err.Error() == "category not found" {
+            c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+            return
+        }
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        return
+    }
+
+    c.JSON(http.StatusOK, gin.H{"message": "category deleted successfully"})
+}
+
 // GetAllCategories godoc
 // @Summary Get all categories
 // @Description Get all available categories
@@ -395,4 +511,60 @@ func (h *BookHandler) GetAllCategories(c *gin.Context) {
     }
 
     c.JSON(http.StatusOK, categories)
+}
+
+// DownloadBook godoc
+// @Summary Download a book PDF
+// @Description Download the PDF file of a book
+// @Tags books
+// @Produce application/pdf
+// @Security BearerAuth
+// @Param id path string true "Book ID"
+// @Success 200 {file} binary "PDF file"
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /books/{id}/download [get]
+func (h *BookHandler) DownloadBook(c *gin.Context) {
+    bookID := c.Param("id")
+
+    // Get book details
+    book, err := h.bookService.GetBook(bookID)
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
+    if book == nil {
+        c.JSON(http.StatusNotFound, gin.H{"error": "Book not found"})
+        return
+    }
+
+    // Build file path
+    filePath := filepath.Join(h.cfg.Upload.Path, book.PDFFile)
+
+    // Check if file exists
+    if _, err := os.Stat(filePath); os.IsNotExist(err) {
+        utils.LogError(err, "PDF file not found on disk", map[string]interface{}{
+            "book_id":   bookID,
+            "file_path": filePath,
+        })
+        c.JSON(http.StatusNotFound, gin.H{"error": "PDF file not found"})
+        return
+    }
+
+    // Log download activity
+    userID := c.GetString("user_id")
+    utils.LogInfo("Book downloaded", map[string]interface{}{
+        "book_id": bookID,
+        "user_id": userID,
+        "title":   book.Title,
+    })
+
+    // Set headers for file download
+    c.Header("Content-Description", "File Transfer")
+    c.Header("Content-Transfer-Encoding", "binary")
+    c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s.pdf", book.Title))
+    c.Header("Content-Type", "application/pdf")
+
+    // Serve the file
+    c.File(filePath)
 }

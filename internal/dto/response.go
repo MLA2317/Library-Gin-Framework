@@ -26,8 +26,10 @@ type SuccessResponse struct {
 
 // Auth Responses
 type AuthResponse struct {
-	Token string       `json:"token"`
-	User  UserResponse `json:"user"`
+	AccessToken  string       `json:"access_token"`
+	RefreshToken string       `json:"refresh_token"`
+	ExpiresIn    int          `json:"expires_in"`
+	User         UserResponse `json:"user"`
 }
 
 type UserResponse struct {

@@ -49,6 +49,22 @@ func (r *CategoryRepository) FindAll() ([]*models.Category, error) {
     return categories, nil
 }
 
+func (r *CategoryRepository) Delete(id string) error {
+    query := `DELETE FROM categories WHERE id = $1`
+    result, err := r.db.Exec(query, id)
+    if err != nil {
+        return err
+    }
+    rows, err := result.RowsAffected()
+    if err != nil {
+        return err
+    }
+    if rows == 0 {
+        return sql.ErrNoRows
+    }
+    return nil
+}
+
 func (r *CategoryRepository) FindByID(id string) (*models.Category, error) {
     category := &models.Category{}
     

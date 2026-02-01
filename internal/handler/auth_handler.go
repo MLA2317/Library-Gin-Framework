@@ -69,3 +69,51 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
     c.JSON(http.StatusOK, response)
 }
+
+// RefreshToken godoc
+// @Summary Refresh access token
+// @Description Get new access token using refresh token
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body dto.RefreshTokenRequest true "Refresh Token Request"
+// @Success 200 {object} dto.AuthResponse
+// @Failure 400 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Router /auth/refresh [post]
+func (h *AuthHandler) RefreshToken(c *gin.Context) {
+    var req dto.RefreshTokenRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        return
+    }
+
+    response, err := h.authService.RefreshToken(&req)
+    if err != nil {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+        return
+    }
+
+    c.JSON(http.StatusOK, response)
+}
+
+// Logout godoc
+// @Summary Logout user
+// @Description Invalidate all refresh tokens for the user
+// @Tags auth
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]string
+// @Failure 401 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /auth/logout [post]
+func (h *AuthHandler) Logout(c *gin.Context) {
+    userID := c.GetString("user_id")
+
+    if err := h.authService.Logout(userID); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to logout"})
+        return
+    }
+
+    c.JSON(http.StatusOK, gin.H{"message": "logged out successfully"})
+}

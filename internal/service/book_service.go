@@ -110,8 +110,52 @@ func (s *BookService) GetAllBooks() ([]*models.BookWithCategory, error) {
     return s.bookRepo.FindAll()
 }
 
+func (s *BookService) GetAllBooksPaginated(page, pageSize int) ([]*models.BookWithCategory, int, error) {
+    if page < 1 {
+        page = 1
+    }
+    if pageSize < 1 || pageSize > 100 {
+        pageSize = 20 // Default page size
+    }
+
+    offset := (page - 1) * pageSize
+    books, err := s.bookRepo.FindAllPaginated(pageSize, offset)
+    if err != nil {
+        return nil, 0, err
+    }
+
+    total, err := s.bookRepo.CountAll()
+    if err != nil {
+        return nil, 0, err
+    }
+
+    return books, total, nil
+}
+
 func (s *BookService) GetBooksByCategory(categoryID string) ([]*models.BookWithCategory, error) {
     return s.bookRepo.FindByCategory(categoryID)
+}
+
+func (s *BookService) GetBooksByCategoryPaginated(categoryID string, page, pageSize int) ([]*models.BookWithCategory, int, error) {
+    if page < 1 {
+        page = 1
+    }
+    if pageSize < 1 || pageSize > 100 {
+        pageSize = 20
+    }
+
+    offset := (page - 1) * pageSize
+    books, err := s.bookRepo.FindByCategoryPaginated(categoryID, pageSize, offset)
+    if err != nil {
+        return nil, 0, err
+    }
+
+    total, err := s.bookRepo.CountByCategory(categoryID)
+    if err != nil {
+        return nil, 0, err
+    }
+
+    return books, total, nil
 }
 
 func (s *BookService) SaveBook(userID, bookID string) error {
@@ -219,4 +263,24 @@ func (s *BookService) CreateCategory(req *dto.CreateCategoryRequest) (*models.Ca
 
 func (s *BookService) GetAllCategories() ([]*models.Category, error) {
     return s.categoryRepo.FindAll()
+}
+
+func (s *BookService) DeleteCategory(categoryID string) error {
+    category, err := s.categoryRepo.FindByID(categoryID)
+    if err != nil {
+        return err
+    }
+    if category == nil {
+        return errors.New("category not found")
+    }
+
+    count, err := s.bookRepo.CountByCategory(categoryID)
+    if err != nil {
+        return err
+    }
+    if count > 0 {
+        return errors.New("cannot delete category with existing books")
+    }
+
+    return s.categoryRepo.Delete(categoryID)
 }

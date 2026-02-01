@@ -32,8 +32,9 @@ type RedisConfig struct {
 }
 
 type JWTConfig struct {
-    Secret          string
-    ExpirationHours int
+    Secret               string
+    ExpirationHours      int
+    RefreshExpirationDays int
 }
 
 type ServerConfig struct {
@@ -52,6 +53,7 @@ func Load() (*Config, error) {
 
     redisDB, _ := strconv.Atoi(getEnv("REDIS_DB", "0"))
     jwtExp, _ := strconv.Atoi(getEnv("JWT_EXPIRATION_HOURS", "24"))
+    refreshExp, _ := strconv.Atoi(getEnv("JWT_REFRESH_EXPIRATION_DAYS", "7"))
     maxFileSize, _ := strconv.ParseInt(getEnv("MAX_FILE_SIZE", "10485760"), 10, 64)
 
     return &Config{
@@ -70,8 +72,9 @@ func Load() (*Config, error) {
             DB:       redisDB,
         },
         JWT: JWTConfig{
-            Secret:          getEnv("JWT_SECRET", "secret"),
-            ExpirationHours: jwtExp,
+            Secret:               getEnv("JWT_SECRET", "secret"),
+            ExpirationHours:      jwtExp,
+            RefreshExpirationDays: refreshExp,
         },
         Server: ServerConfig{
             Port: getEnv("SERVER_PORT", "8080"),
